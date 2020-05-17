@@ -866,7 +866,8 @@ def sync_storage(args):
             destination=args.destination,
             client=dcache,
             fts_host=args.fts_host,
-            recursive=args.recursive)
+            recursive=args.recursive,
+            action=args.action)
         print_response(response)
 
 
@@ -1634,14 +1635,13 @@ If action is 'qos' then the value of the JSON object 'target' item describes the
         help='Synchronise storage')
     sync_parser.set_defaults(func=sync_storage)
     sync_parser.add_argument(
-        '--root_path', default=None, required=True,
-        help="The root path.")
+        '--root_path', default="/", help="The root path.")
     sync_parser.add_argument(
         '--destination', dest="destination", required=True,
         help="The destination url.")
     sync_parser.add_argument(
         '--source', dest="source", required=True,
-        help="The source url.")
+        help="The source WebDAV url; e.g., https://dcache.example.org/path/to/directory/")
     sync_parser.add_argument(
         '--fts_host', dest="fts_host", required=True,
         help="The FTS host name.")
@@ -1651,6 +1651,14 @@ If action is 'qos' then the value of the JSON object 'target' item describes the
         const=True,
         default=False,
         help='Recursively sync subdirectories.')
+    sync_parser.add_argument(
+        '--action',
+        dest="action",
+        action="store",
+        default=None,
+        required=True,
+        choices=['rucio-register', 'rucio-copy', 'fts-copy', 'print'],
+        help="How to react to new files.")
     return oparser
 
 

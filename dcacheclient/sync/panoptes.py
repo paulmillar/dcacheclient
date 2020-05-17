@@ -95,10 +95,40 @@ def submit_transfer_to_rucio(name, source_url, bytes, adler32):
         _LOGGER.error(traceback.format_exc())
 
 
-def do_replication(session, new_files):
+def register_in_rucio(source_url, bytes, adler32):
+    _LOGGER.info("Here")
+    # transfer pre-prod -> prod -> snic
+    rucio_client = Client()
+
+    # TODO: scope should be extracted from the path: Top directory
+    scope = 'user.pmillar'
+
+    name = os.path.basename(urlparse(source_url).path)
+
+    try:
+        replica = {
+            'scope': scope,
+            'name': name,
+            'pfn': source_url,
+            'bytes': int(bytes),
+            'adler32': adler32}
+
+        _LOGGER.debug('Register replica {}'.format(str(replica)))
+
+        rse = 'XDCDESY_PAULM_1_TEST'
+
+        rucio_client.add_replicas(
+            rse=rse,
+            files=[replica])
+    except:
+        _LOGGER.error(traceback.format_exc())
+
+
+def action_fts_copy(new_files, session, fts_host):
+    print("Action: FTS-COPY starting", flush=True)
     while True:
         try:
-            source_url, destination_url, fts_host = new_files.get()
+            source_url, destination_url = new_files.get()
             # Workaround: slight risk the client receives the `IN_CLOSE_WRITE`
             # event before the upload is completed. TBR.
             for _ in range(10):
@@ -113,15 +143,6 @@ def do_replication(session, new_files):
             adler32 = response.headers['Digest'].replace('adler32=', '')
             bytes = int(response.headers['Content-Length'])
 
-
-#            submit_transfer_to_rucio(
-#                name=name,
-#                source_url=source_url,
-#                bytes=bytes,
-#                adler32=adler32
-#            )
-
-
             submit_transfer_to_fts(
                 source_url=source_url,
                 bytes=bytes,
@@ -135,17 +156,110 @@ def do_replication(session, new_files):
             new_files.task_done()
 
 
-def main(root_path, source, destination, client, fts_host, recursive):
+def action_rucio_copy(new_files, session):
+    print("Action: RUCIO-COPY starting", flush=True)
+    while True:
+        try:
+            source_url, destination_url = new_files.get()
+            # Workaround: slight risk the client receives the `IN_CLOSE_WRITE`
+            # event before the upload is completed. TBR.
+            for _ in range(10):
+                # Get this info with dav
+                # Can use the namespace operation later
+                response = session.head(source_url, headers={'Want-Digest': 'adler32'})
+                if response.status_code == 200:
+                    break
+                time.sleep(0.1)
+            _LOGGER.debug(response.headers)
+
+            adler32 = response.headers['Digest'].replace('adler32=', '')
+            bytes = int(response.headers['Content-Length'])
+
+            submit_transfer_to_rucio(
+                name=name,
+                source_url=source_url,
+                bytes=bytes,
+                adler32=adler32
+            )
+        except:
+            _LOGGER.error(traceback.format_exc())
+        finally:
+            new_files.task_done()
+
+
+def action_rucio_register(new_files, session):
+    print("Action: RUCIO-REGISTER starting", flush=True)
+    s = requests.Session()
+    s.verify = '/etc/grid-security/certificates'
+    while True:
+        try:
+            source_url, destination_url = new_files.get()
+            print ("Registering: " + source_url, flush=True)
+            # Workaround: slight risk the client receives the `IN_CLOSE_WRITE`
+            # event before the upload is completed. TBR.
+            for _ in range(10):
+                # Get this info with dav
+                # Can use the namespace operation later
+                response = s.head(source_url, headers={'Want-Digest': 'adler32'})
+                if response.status_code == 200:
+                    break
+                time.sleep(0.1)
+            _LOGGER.debug(response.headers)
+
+            adler32 = response.headers['Digest'].replace('adler32=', '')
+            bytes = int(response.headers['Content-Length'])
+
+            register_in_rucio(
+                source_url=source_url,
+                bytes=bytes,
+                adler32=adler32)
+        except:
+            _LOGGER.error(traceback.format_exc())
+        finally:
+            new_files.task_done()
+
+def action_print(new_files):
+    print("Action: PRINT starting", flush=True)
+    while True:
+        try:
+            source_url, destination_url = new_files.get()
+            print (source_url + " -> " + destination_url, flush=True)
+        except:
+            _LOGGER.error(traceback.format_exc())
+        finally:
+            new_files.task_done()
+
+
+def build_thread_for_action(**attributes):
+    session = attributes['client'].session
+    action = attributes['action']
+    new_files = attributes['new_files']
+    if action == "fts-copy":
+        fts_host = attributes['fts_host']
+        return Thread(target=action_fts_copy, args=(new_files, session, fts_host))
+    elif action == "rucio-copy":
+        return Thread(target=action_rucio_copy, args=(new_files, session))
+    elif action == "rucio-register":
+        return Thread(target=action_rucio_register, args=(new_files, session))
+    elif action == "print":
+        return Thread(target=action_print, args=(new_files,))
+    else:
+        raise ValueError("Unknown action: {}".format(action))
+
+
+def main(root_path, source, destination, recursive, **attributes):
     '''
     main function
     '''
     new_files = Queue(maxsize=0)
-    worker = Thread(target=do_replication, args=(client.session, new_files,))
+    attributes['new_files'] = new_files
+    worker = build_thread_for_action(**attributes)
     worker.setDaemon(True)
     worker.start()
 
     base_path = urlparse(source).path
     paths = [os.path.normpath(root_path + '/' + base_path)]
+    client = attributes['client']
     if recursive:
         directories = [urlparse(source).path]
         _LOGGER.debug("Scan {}".format(base_path))
@@ -184,13 +298,12 @@ def main(root_path, source, destination, client, fts_host, recursive):
                     name = data['event']['name']
                     full_path = watches[data["subscription"]]
                     short_path = os.path.relpath(full_path, root_path)[len(base_path) - 1:]
-                    source_url = urljoin(source, os.path.normpath(short_path + '/' + name))
+                    source_url = urljoin(source, os.path.normpath(os.path.join(short_path, name)))
                     _LOGGER.info('New file detected: ' + source_url)
-                    print (source_url[len(source):])
                     destination_url = urljoin(destination, os.path.normpath(source_url[len(source):]))
                     _LOGGER.info('Request to copy it to: ' + destination_url)
 
-                    new_files.put((source_url, destination_url, fts_host))
+                    new_files.put((source_url, destination_url))
                 elif 'event' in data and data['event']['mask'] == ["IN_CREATE", "IN_ISDIR"]:
                     name = data['event']['name']
                     full_path = watches[data["subscription"]]
