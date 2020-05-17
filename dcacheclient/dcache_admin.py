@@ -915,7 +915,7 @@ def get_parser(config):
     oparser.add_argument(
         '--ca-certificate',
         dest='ca_certificate',
-        default=None,
+        default=config.get('default', 'ca-certificate', fallback=None),
         help='CA certificate to verify peer against (SSL).')
     oparser.add_argument(
         '--ca-directory', dest='ca_directory', default='/etc/grid-security/certificates/',
