@@ -1,0 +1,34 @@
+#!/bin/bash
+
+OIDC_AGENT_ACCOUNT=XDC
+
+RUCIO_ACCOUNT=$(awk '/\[client\]/,/^$/{print $0}' $RUCIO_HOME/etc/rucio.cfg|sed -n 's/account *= *//p'|head -1)
+NAME=$(id -u -n)
+TOKEN_DIR=/tmp/$NAME/.rucio_$RUCIO_ACCOUNT
+TOKEN_FILE=$TOKEN_DIR/auth_token_$RUCIO_ACCOUNT
+
+mkdir -p $TOKEN_DIR
+
+if [ -f $TOKEN_FILE ]; then
+    expires_at=$(cut -d. -f2 $TOKEN_FILE \
+              | base64 -d 2>/dev/null \
+              | jq .exp)
+    if [ -n "$expires_at" ]; then
+        earliest_acceptable_expiry=$(date +%s -d "+10 minutes")
+        [ $expires_at -ge $earliest_acceptable_expiry ]
+        renew_token=$?
+    else
+        renew_token=1
+    fi
+else
+    renew_token=1
+fi
+
+if [ $renew_token = 1 ]; then
+   oidc-add -a | grep -q $OIDC_AGENT_ACCOUNT || oidc-add $OIDC_AGENT_ACCOUNT
+
+   echo Renewing access token
+   oidc-token --aud=rucio $OIDC_AGENT_ACCOUNT \
+            | tr -d '\n' \
+            > $TOKEN_FILE
+fi

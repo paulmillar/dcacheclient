@@ -95,13 +95,13 @@ def submit_transfer_to_rucio(name, source_url, bytes, adler32):
         _LOGGER.error(traceback.format_exc())
 
 
-def register_in_rucio(source_url, bytes, adler32):
+def register_in_rucio(source_url, scope, rse, bytes, adler32):
     _LOGGER.info("Here")
+
     # transfer pre-prod -> prod -> snic
     rucio_client = Client()
 
     # TODO: scope should be extracted from the path: Top directory
-    scope = 'user.pmillar'
 
     name = os.path.basename(urlparse(source_url).path)
 
@@ -114,8 +114,6 @@ def register_in_rucio(source_url, bytes, adler32):
             'adler32': adler32}
 
         _LOGGER.debug('Register replica {}'.format(str(replica)))
-
-        rse = 'XDCDESY_PAULM_1_TEST'
 
         rucio_client.add_replicas(
             rse=rse,
@@ -187,8 +185,8 @@ def action_rucio_copy(new_files, session):
             new_files.task_done()
 
 
-def action_rucio_register(new_files, session):
-    print("Action: RUCIO-REGISTER starting", flush=True)
+def action_rucio_register(new_files, session, scope, rse):
+    _LOGGER.debug("Action: RUCIO-REGISTER starting")
     s = requests.Session()
     s.verify = '/etc/grid-security/certificates'
     while True:
@@ -211,6 +209,8 @@ def action_rucio_register(new_files, session):
 
             register_in_rucio(
                 source_url=source_url,
+                scope=scope,
+                rse=rse,
                 bytes=bytes,
                 adler32=adler32)
         except:
@@ -234,13 +234,16 @@ def build_thread_for_action(**attributes):
     session = attributes['client'].session
     action = attributes['action']
     new_files = attributes['new_files']
+    rse = attributes['rse']
+    scope = attributes['scope']
+
     if action == "fts-copy":
         fts_host = attributes['fts_host']
         return Thread(target=action_fts_copy, args=(new_files, session, fts_host))
     elif action == "rucio-copy":
         return Thread(target=action_rucio_copy, args=(new_files, session))
     elif action == "rucio-register":
-        return Thread(target=action_rucio_register, args=(new_files, session))
+        return Thread(target=action_rucio_register, args=(new_files, session, scope, rse))
     elif action == "print":
         return Thread(target=action_print, args=(new_files,))
     else:

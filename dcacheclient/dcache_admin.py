@@ -867,7 +867,9 @@ def sync_storage(args):
             client=dcache,
             fts_host=args.fts_host,
             recursive=args.recursive,
-            action=args.action)
+            action=args.action,
+            scope=args.scope,
+            rse=args.rse)
         print_response(response)
 
 
@@ -1659,6 +1661,20 @@ If action is 'qos' then the value of the JSON object 'target' item describes the
         required=True,
         choices=['rucio-register', 'rucio-copy', 'fts-copy', 'print'],
         help="How to react to new files.")
+    sync_parser.add_argument(
+        '--rse',
+        dest="rse",
+        action="store",
+        default=None,
+        required=True,
+        help="The name of the Rucio Storage Element")
+    sync_parser.add_argument(
+        '--scope',
+        dest="scope",
+        action="store",
+        default=None,
+        required=True,
+        help="The scope within which the files are registered")
     return oparser
 
 

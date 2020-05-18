@@ -1,0 +1,35 @@
+
+Config file (~/.dcachecfg)
+
+
+[default]
+url=https://dcache-xdc.desy.de:3880
+oidc-agent-account=XDC
+ca-certificate=/etc/ssl/certs/ca-certificates.crt
+
+
+Sample invocation
+
+    dcache-admin identity getUserAttributes
+
+
+
+    dcache-admin -d sync --action print \
+        --source https://dcache-xdc.desy.de:2443/Users/paul/Rucio/test1/ \
+        --fts_host foo \
+	--destination https://example.org/public/test-1/
+
+
+
+    dcache-admin -d sync --action rucio-register  \
+        --source https://dcache-xdc.desy.de:2443/Users/paul/Rucio/test1/user/pmillar/
+	--fts_host foo \
+	--destination https://example.org/public/test-1/ \
+	--scope user.pmillar --rse XDCDESY_PAULM_1_TEST
+
+
+
+# NOTE This is for RSE prefix /Users/paul/Rucio/test1 and scope
+#  "user.pmillar".  Files appear under directory
+#  /Users/paul/Rucio/test1/user/pmillar
+
