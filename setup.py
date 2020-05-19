@@ -24,7 +24,7 @@ REQUIRES = [
     "argcomplete >= 1.11.1",
     "sseclient",
     "liboidcagent >= 0.2.2",
-    "rucio-clients"]
+    "rucio-clients == 1.22.5"]
 
 setup(
     name=NAME,

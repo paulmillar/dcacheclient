@@ -104,6 +104,7 @@ def register_in_rucio(source_url, scope, rse, bytes, adler32):
     # TODO: scope should be extracted from the path: Top directory
 
     name = os.path.basename(urlparse(source_url).path)
+    _LOGGER.debug("Registering file with name {}".format(name))
 
     try:
         replica = {
@@ -129,7 +130,7 @@ def action_fts_copy(new_files, session, fts_host):
             source_url, destination_url = new_files.get()
             # Workaround: slight risk the client receives the `IN_CLOSE_WRITE`
             # event before the upload is completed. TBR.
-            for _ in range(10):
+            for _ in range(100):
                 # Get this info with dav
                 # Can use the namespace operation later
                 response = session.head(source_url, headers={'Want-Digest': 'adler32'})
@@ -188,17 +189,19 @@ def action_rucio_copy(new_files, session):
 def action_rucio_register(new_files, session, scope, rse):
     _LOGGER.debug("Action: RUCIO-REGISTER starting")
     s = requests.Session()
-    s.verify = '/etc/grid-security/certificates'
+    #s.verify = '/etc/grid-security/certificates'
     while True:
         try:
             source_url, destination_url = new_files.get()
             print ("Registering: " + source_url, flush=True)
             # Workaround: slight risk the client receives the `IN_CLOSE_WRITE`
             # event before the upload is completed. TBR.
-            for _ in range(10):
+            for _ in range(100):
                 # Get this info with dav
                 # Can use the namespace operation later
-                response = s.head(source_url, headers={'Want-Digest': 'adler32'})
+                response = s.head(source_url,
+                                  verify = '/etc/grid-security/certificates',
+                                  headers={'Want-Digest': 'adler32'})
                 if response.status_code == 200:
                     break
                 time.sleep(0.1)

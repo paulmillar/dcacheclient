@@ -1,35 +1,225 @@
 
-Config file (~/.dcachecfg)
+DEMO INSTRUCTIONS
+
+Configuration for 'dcache-admin' command is stored in the ~/.dcachecfg
+file.
+
+Here is a typical configuration:
 
 
-[default]
-url=https://dcache-xdc.desy.de:3880
-oidc-agent-account=XDC
-ca-certificate=/etc/ssl/certs/ca-certificates.crt
+    [default]
+    url=https://dcache-xdc.desy.de:3880
+    oidc-agent-account=XDC
+    ca-certificate=/etc/ssl/certs/ca-certificates.crt
 
 
-Sample invocation
+Where:
+
+    'url' is the hostname and port number for the dCache instance's
+        REST API.  The path should be '/', as dcache-admin will add
+        the necessary path within the REST API namespace.
+
+    'oidc-agent-account' is the name of the oidc-agent account that
+        dcache-admin will use when communicating with dCache.  The
+        account should be loaded already, using the 'oidc-add'
+        command.
+
+    'ca-certificate' is the path to a file containing all the CA
+        certificates in PEM format.  The dcache-xdc.desy.de REST API
+        presents a certificate issued by a CA that web-browsers trust;
+        it is NOT a grid CA issued certificate.  Most Linux
+        distributions provide such a file.
+
+
+The 'dcache-admin' command also uses the Rucio client to communicate
+with a Rucio server.  The Rucio client configuration is the
+$RUCIO_HOME/etc/rucio.cfg file, where the RUCIO_HOME environment
+variable must be set.
+
+The following shows a complete example configuration file:
+
+
+    [client]
+    rucio_host = https://rucio-doma.cern.ch
+    auth_host = https://rucio-doma-auth.cern.ch
+    account = pmillar
+    ca_cert = /home/paul/.globus/IGTF/CERN-bundle.pem
+    auth_type = oidc
+    oidc_auto = true
+    oidc_scope = openid profile
+    oidc_audience = rucio
+    oidc_polling = true
+    oidc_refresh_lifetime = 1
+    oidc_issuer = xdc
+    oidc_username = paulmillar
+    oidc_password = *******
+
+
+Although it is possible to configure Rucio to use OIDC without
+specifying the OP (IAM) username and password, this is currently
+(2020-05-19) unstable: not all the bugs have been removed.  In
+particular the latest rucio-clients release (1.22.6) is broken.
+Therefore I recommend using rucio-clients 1.22.5 and embedding the
+password in the configuration for now.
+
+Note that the 'ca_cert' points to a file containing all the
+certificates of trusted CAs in PEM format.  The Rucio service is
+presenting a certificate issued by an IGTF CA.  Therefore, this file
+should contain the IGTF CAs.
+
+Running dcache-admin:
+
+With the above ~/.dcachecfg configuration, it is possible to run the
+dcache-admin command without specifying any authentication options on
+the command line.
+
+The identity query is a simple test to verify this is working.
+
+The command:
 
     dcache-admin identity getUserAttributes
 
+Typical output:
+
+    paul@sprocket:~$ dcache-admin identity getUserAttributes
+    {'gids': [1012, 2001, 1012, 0],
+     'homeDirectory': '/Users/paul',
+     'rootDirectory': '/',
+     'status': 'AUTHENTICATED',
+     'uid': 2001,
+     'unassertedRoles': ['admin'],
+     'username': 'paul'}
+    paul@sprocket:~$ 
 
 
-    dcache-admin -d sync --action print \
-        --source https://dcache-xdc.desy.de:2443/Users/paul/Rucio/test1/ \
-        --fts_host foo \
-	--destination https://example.org/public/test-1/
+The 'sync' command is the 'panoptes' agent; i.e., 'dcache-admin sync'.
+This tells dcache-admin to subscribe to file-creation events in a
+particular path and do "something" when a new file is created.
+
+The '--action' option describes what panoptes should do when receiving
+a file-creation event.  The valid options include 'print',
+'rucio-register' 'rucio-copy' and 'fts-copy'.  These have the
+following meaning:
+
+    'print' simply log that an event was received.  There is no
+        further activity.
+
+    'rucio-register' adds the file replica to Rucio, creating the DID
+        as necessary.
+
+    'rucio-copy' in addition to registering the replica in Rucio, this
+        action also adds a rule to replica the file to another RSE.
+        This is untested and likely broken.
+
+    'fts-copy' requests that FTS makes a copy of the newly created
+        file.  This might work.
+
+The 'print' action allows for easy verification that panoptes
+file-creation event subscription is working correctly.
+
+The --source option is required.  It describes the WebDAV endpoint for
+the path to watch.  Here is an example:
+
+    --source https://dcache-xdc.desy.de:2443/Users/paul/Rucio/test1/
+
+This describes the WebDAV hostname and port number, along with the
+path panoptes will watch: '/Users/paul/Rucio/test1'.
+
+The WebDAV endpoint must be the one where dCache presents an IGTF
+certificate.  For dcache-xdc, this WebDAV endpoint is listenig on port
+2443.
 
 
-
-    dcache-admin -d sync --action rucio-register  \
-        --source https://dcache-xdc.desy.de:2443/Users/paul/Rucio/test1/user/pmillar/
-	--fts_host foo \
-	--destination https://example.org/public/test-1/ \
-	--scope user.pmillar --rse XDCDESY_PAULM_1_TEST
+IMPORTANT The URL *must* end with a slash, as indicated in the above
+example.
 
 
+The following command gives an example how to test panoptes without
+involving Rucio.
 
-# NOTE This is for RSE prefix /Users/paul/Rucio/test1 and scope
-#  "user.pmillar".  Files appear under directory
-#  /Users/paul/Rucio/test1/user/pmillar
 
+    dcache-admin sync --action print \
+        --source https://dcache-xdc.desy.de:2443/Users/paul/Rucio/test1/
+        --fts_host ignored \
+	--destination https://example.org/ignored/
+	--scope IGNORED
+	--rse IGNORED
+
+
+Note that currently several arguments must be added and that are
+ignored in this usage.  These are indicated above with the key word
+'ignored'.
+
+Here is a typical invocation:
+
+
+paul@sprocket:~$ dcache-admin sync --action print --source https://dcache-xdc.desy.de:2443/Users/paul/Rucio/test1/ --destination https://example.org/ignored/ --scope IGNORED --fts_host ignored --rse IGNORED
+Action: PRINT starting
+2020-05-19 06:51:28,139 - dcacheclient.sync.panoptes - INFO - Channel is https://dcache-xdc.desy.de:3880/api/v1/events/channels/yvFdodSYpx-L5RINzPpq3w
+2020-05-19 06:51:47,243 - dcacheclient.sync.panoptes - INFO - New file detected: https://dcache-xdc.desy.de:2443/Users/paul/Rucio/test1/test-upload-file
+2020-05-19 06:51:47,243 - dcacheclient.sync.panoptes - INFO - Request to copy it to: https://example.org/ignored/test-upload-file
+https://dcache-xdc.desy.de:2443/Users/paul/Rucio/test1/test-upload-file -> https://example.org/ignored/test-upload-file
+
+
+This shows the output when the file 'test-upload-file' was uploaded
+into the watched directory: /Users/paul/Rucio/test1.
+
+Rucio has a naming convention where files associated with a specific
+Rucio scope are located in a directory derived from that scope's name.
+In particular, any '.' in the scope name is converted to a slash in
+the path; for example, the scope 'user.pmillar' corresponds to the
+relative path 'user/pmillar'.
+
+Therefore, files for Rucio that are to be included in a particular
+scope must include the scope-specific relative path.
+
+For example, if the RSE defines a WebDAV endpoint with prefix
+'/Users/paul/Rucio/test1' then files stored within scope
+'user.pmillar' must be stored in the directory
+/Users/paul/Rucio/test1/user/pmillar.
+
+
+IMPORTANT
+Currently paoptes does not handle or verify this mapping
+itself, the user is responsible for ensuring that the --source and
+--scope arguments are consistent.
+
+Here is a complete example where panoptes will register files within
+Rucio:
+
+
+paul@sprocket:~$ rucio ls user.pmillar:* --filter type=FILE
++------------------------------------------------+--------------+
+| SCOPE:NAME                                     | [DID TYPE]   |
+|------------------------------------------------+--------------|
+| user.pmillar:test-upload-file                  | FILE         |
+| user.pmillar:beautiful-holiday-lake-358482.jpg | FILE         |
+| user.pmillar:simple-test.py                    | FILE         |
++------------------------------------------------+--------------+
+paul@sprocket:~$ 
+
+
+paul@sprocket:~$ dcache-admin sync --action rucio-register --source https://dcache-xdc.desy.de:2443/Users/paul/Rucio/test1/user/pmillar/ --destination https://example.org/ignored/ --scope user.pmillar --fts_host ignored --rse XDCDESY_PAULM_1_TEST
+2020-05-19 09:07:50,402 - dcacheclient.sync.panoptes - INFO - Channel is https://dcache-xdc.desy.de:3880/api/v1/events/channels/dv12bNIUNk4aL6pc2rbxJg
+2020-05-19 09:07:59,324 - dcacheclient.sync.panoptes - INFO - New file detected: https://dcache-xdc.desy.de:2443/Users/paul/Rucio/test1/user/pmillar/paul-test-1
+2020-05-19 09:07:59,325 - dcacheclient.sync.panoptes - INFO - Request to copy it to: https://example.org/ignored/paul-test-1
+Registering: https://dcache-xdc.desy.de:2443/Users/paul/Rucio/test1/user/pmillar/paul-test-1
+2020-05-19 09:07:59,713 - dcacheclient.sync.panoptes - INFO - Here
+2020-05-19 09:07:59,941 - rucio.client.baseclient - WARNING - ConnectionError: HTTPSConnectionPool(host='rucio-doma.cern.ch', port=443): Max retries exceeded with url: /replicas (Caused by SSLError(SSLError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed (_ssl.c:720)'),))
+
+
+paul@sprocket:~$ rucio ls user.pmillar:* --filter type=FILE
++------------------------------------------------+--------------+
+| SCOPE:NAME                                     | [DID TYPE]   |
+|------------------------------------------------+--------------|
+| user.pmillar:test-upload-file                  | FILE         |
+| user.pmillar:paul-test-1                       | FILE         |
+| user.pmillar:beautiful-holiday-lake-358482.jpg | FILE         |
+| user.pmillar:simple-test.py                    | FILE         |
++------------------------------------------------+--------------+
+paul@sprocket:~$ 
+
+
+NOTE there is a WARNING issued that the Rucio host failed the TLS host
+certificate verification.  It seems that Rucio then retries with the
+correct configuration, as the file is actually registered.
