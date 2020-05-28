@@ -106,21 +106,19 @@ def register_in_rucio(source_url, scope, name, rse, bytes, adler32):
 
     _LOGGER.debug("Registering file with name {}".format(name))
 
-    try:
-        replica = {
-            'scope': scope,
-            'name': name,
-            'pfn': source_url,
-            'bytes': int(bytes),
-            'adler32': adler32}
 
-        _LOGGER.debug('Register replica {}'.format(str(replica)))
+    replica = {
+        'scope': scope,
+        'name': name,
+        'pfn': source_url,
+        'bytes': int(bytes),
+        'adler32': adler32}
 
-        rucio_client.add_replicas(
-            rse=rse,
-            files=[replica])
-    except:
-        _LOGGER.error(traceback.format_exc())
+    _LOGGER.debug('Register replica {}'.format(str(replica)))
+
+    rucio_client.add_replicas(
+        rse=rse,
+        files=[replica])
 
 
 def action_fts_copy(new_files, session, fts_host):
@@ -221,7 +219,11 @@ def action_rucio_register(new_files, session, scope, rse, broker_host, broker_po
                 rse=rse,
                 bytes=bytes,
                 adler32=adler32)
-            broker_connection.send(destination=broker_destination, body=json.dumps({'event_type': 'did_registered', 'scope': scope, 'name': name}, headers={'persistent': 'true', 'event_type': 'did_registered'}))
+            notification_body = {'event_type': 'did_registered', 'scope': scope, 'name': name}
+            broker_connection.send(
+                destination=broker_destination, 
+                body=json.dumps(notification_body),
+                headers={'persistent': 'true', 'event_type': 'did_registered'})
         except:
             _LOGGER.error(traceback.format_exc())
         finally:
