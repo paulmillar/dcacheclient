@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import requests
+import stomp
 import traceback
 import time
 
@@ -95,7 +96,7 @@ def submit_transfer_to_rucio(name, source_url, bytes, adler32):
         _LOGGER.error(traceback.format_exc())
 
 
-def register_in_rucio(source_url, scope, rse, bytes, adler32):
+def register_in_rucio(source_url, scope, name, rse, bytes, adler32):
     _LOGGER.info("Here")
 
     # transfer pre-prod -> prod -> snic
@@ -103,24 +104,21 @@ def register_in_rucio(source_url, scope, rse, bytes, adler32):
 
     # TODO: scope should be extracted from the path: Top directory
 
-    name = os.path.basename(urlparse(source_url).path)
     _LOGGER.debug("Registering file with name {}".format(name))
 
-    try:
-        replica = {
-            'scope': scope,
-            'name': name,
-            'pfn': source_url,
-            'bytes': int(bytes),
-            'adler32': adler32}
 
-        _LOGGER.debug('Register replica {}'.format(str(replica)))
+    replica = {
+        'scope': scope,
+        'name': name,
+        'pfn': source_url,
+        'bytes': int(bytes),
+        'adler32': adler32}
 
-        rucio_client.add_replicas(
-            rse=rse,
-            files=[replica])
-    except:
-        _LOGGER.error(traceback.format_exc())
+    _LOGGER.debug('Register replica {}'.format(str(replica)))
+
+    rucio_client.add_replicas(
+        rse=rse,
+        files=[replica])
 
 
 def action_fts_copy(new_files, session, fts_host):
@@ -186,13 +184,17 @@ def action_rucio_copy(new_files, session):
             new_files.task_done()
 
 
-def action_rucio_register(new_files, session, scope, rse):
+def action_rucio_register(new_files, session, scope, rse, broker_host, broker_port, broker_username, broker_password, broker_destination):
     _LOGGER.debug("Action: RUCIO-REGISTER starting")
     s = requests.Session()
+    broker_connection = stomp.Connection([(broker_host, broker_port)])
+    broker_connection.start()
+    broker_connection.connect(broker_username, broker_password)
     #s.verify = '/etc/grid-security/certificates'
     while True:
         try:
             source_url, destination_url = new_files.get()
+            name = os.path.basename(urlparse(source_url).path)
             print ("Registering: " + source_url, flush=True)
             # Workaround: slight risk the client receives the `IN_CLOSE_WRITE`
             # event before the upload is completed. TBR.
@@ -213,9 +215,15 @@ def action_rucio_register(new_files, session, scope, rse):
             register_in_rucio(
                 source_url=source_url,
                 scope=scope,
+                name=name,
                 rse=rse,
                 bytes=bytes,
                 adler32=adler32)
+            notification_body = {'event_type': 'did_registered', 'scope': scope, 'name': name}
+            broker_connection.send(
+                destination=broker_destination, 
+                body=json.dumps(notification_body),
+                headers={'persistent': 'true', 'event_type': 'did_registered'})
         except:
             _LOGGER.error(traceback.format_exc())
         finally:
@@ -246,7 +254,12 @@ def build_thread_for_action(**attributes):
     elif action == "rucio-copy":
         return Thread(target=action_rucio_copy, args=(new_files, session))
     elif action == "rucio-register":
-        return Thread(target=action_rucio_register, args=(new_files, session, scope, rse))
+        broker_host=attributes['broker_host']
+        broker_port=attributes['broker_port']
+        broker_username=attributes['broker_username']
+        broker_password=attributes['broker_password']
+        broker_destination=attributes['broker_destination']
+        return Thread(target=action_rucio_register, args=(new_files, session, scope, rse, broker_host, broker_port, broker_username, broker_password, broker_destination))
     elif action == "print":
         return Thread(target=action_print, args=(new_files,))
     else:

@@ -869,7 +869,12 @@ def sync_storage(args):
             recursive=args.recursive,
             action=args.action,
             scope=args.scope,
-            rse=args.rse)
+            rse=args.rse,
+            broker_host=args.broker_host,
+            broker_port=args.broker_port,
+            broker_username=args.broker_username,
+            broker_password=args.broker_password,
+            broker_destination=args.broker_destination)
         print_response(response)
 
 
@@ -1675,6 +1680,21 @@ If action is 'qos' then the value of the JSON object 'target' item describes the
         default=None,
         required=True,
         help="The scope within which the files are registered")
+    sync_parser.add_argument(
+        '--broker_host', dest="broker_host", required=True,
+        help="The Broker host name.")
+    sync_parser.add_argument(
+        '--broker_port', dest="broker_port", required=True,
+        help="The Broker port.")
+    sync_parser.add_argument(
+        '--broker_username', dest="broker_username", required=True,
+        help="The Broker username.")
+    sync_parser.add_argument(
+        '--broker_password', dest="broker_password", required=True,
+        help="The Broker password.")
+    sync_parser.add_argument(
+        '--broker_destination', dest="broker_destination", required=True,
+        help="The Broker destination.")
     return oparser
 
 
